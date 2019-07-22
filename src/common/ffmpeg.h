@@ -3,16 +3,21 @@
 
 // simplified interface for recording audio and/or video from emulator
 
-// unlike the rest of the wx code, this has no wx dependency at all, and
-// could be used by other front ends as well.
+// required for ffmpeg
+#define __STDC_LIMIT_MACROS
+#define __STDC_CONSTANT_MACROS
 
-// this only supports selecting output format via file name extensions;
-// maybe some future version will support specifying a format.  wx-2.9
-// has an extra widget for the file selector, but 2.8 doesn't.
-
-// the only missing piece that I couldn't figure out how to do generically
-// is the code to find the available formats & associated extensions for
-// the file dialog.
+extern "C" {
+#include <libavutil/avassert.h>
+#include <libavutil/channel_layout.h>
+#include <libavutil/opt.h>
+#include <libavutil/mathematics.h>
+#include <libavutil/timestamp.h>
+#include <libavutil/imgutils.h>
+#include <libavformat/avformat.h>
+#include <libswscale/swscale.h>
+#include <libswresample/swresample.h>
+}
 
 // return codes
 // probably ought to put in own namespace, but this is good enough
@@ -40,7 +45,7 @@ class MediaRecorder
         void Stop();
         bool IsRecording()
         {
-                return oc != NULL;
+                return isRecording;
         }
         // add a frame of video; width+height+depth already given
         // assumes a 1-pixel border on top & right
@@ -51,28 +56,49 @@ class MediaRecorder
         MediaRet AddFrame(const uint16_t *aud);
 
         private:
-        static bool did_init;
+        bool isRecording;
 
-// these are to avoid polluting things with avcodec includes
-#ifndef priv_AVFormatContext
-#define priv_AVFormatContext void
-#define priv_AVStream void
-#define priv_AVOutputFormat void
-#define priv_AVFrame void
-#define priv_SwsContext void
-#define priv_PixelFormat int
-#endif
-        priv_AVFormatContext *oc;
-        priv_AVStream *vid_st, *aud_st;
-        uint8_t *audio_buf, *video_buf;
-        uint16_t *audio_buf2;
-        int frame_len, sample_len, in_audio_buf2;
-        int linesize, pixsize;
-        priv_PixelFormat pixfmt;
-        priv_AVFrame *pic, *convpic;
-        priv_SwsContext *converter;
+        AVPixelFormat pixfmt;
+        struct SwsContext *sws;
 
-        MediaRet setup_sound_stream(const char *fname, priv_AVOutputFormat *fmt);
+
+        AVStream *st;
+        AVCodecContext *enc;
+
+
+        int64_t npts;
+
+
+        AVFrame *frameIn;
+        AVFrame *frameOut;
+
+
+        AVOutputFormat *fmt;
+        AVFormatContext *oc;
+
+
+        AVCodec *vcodec;
+
+
+        int pixsize;
+        int linesize;
+        int tbord, rbord;
+
+
+        // audio
+        struct SwrContext *swr;
+        AVCodec *acodec;
+        AVStream *ast;
+        AVCodecContext *aenc;
+        int64_t next_pts;
+        int samples_count;
+        AVFrame *audioframe;
+        AVFrame *audioframeTmp;
+
+        int frame_len, sample_len;
+
+
+        MediaRet setup_sound_stream(const char *fname, AVOutputFormat *fmt);
         MediaRet setup_video_stream(const char *fname, int w, int h, int d);
         MediaRet finish_setup(const char *fname);
 };
